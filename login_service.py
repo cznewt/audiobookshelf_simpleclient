@@ -5,7 +5,7 @@ class AudioBookShelfService:
 		self.base_url = base_url
 
 	def login(self, username, password):
-		url = f"{self.base_url}/login"
+		url = "{}/login".format(self.base_url)
 		payload = {
 			"username": username,
 			"password": password
@@ -13,14 +13,14 @@ class AudioBookShelfService:
 		return self._post(url, payload).get("user")
 
 	def logout(self, socketId=None):
-		url = f"{self.base_url}/logout"
+		url = "{}/logout".format(self.base_url)
 		payload = {}
 		if socketId:
 			payload["socketId"] = socketId
 		self._post(url, payload)
 
 	def initialize_server(self, new_root_username, new_root_password=""):
-		url = f"{self.base_url}/init"
+		url = "{}/init".format(self.base_url)
 		payload = {
 			"newRoot": {
 				"username": new_root_username,
@@ -30,15 +30,15 @@ class AudioBookShelfService:
 		self._post(url, payload)
 
 	def server_status(self):
-		url = f"{self.base_url}/status"
+		url = "{}/status".format(self.base_url)
 		return self._get(url)        
 
 	def ping(self):
-		url = f"{self.base_url}/ping"
+		url = "{}/ping".format(self.base_url)
 		return self._get(url)
 
 	def healthcheck(self):
-		url = f"{self.base_url}/healthcheck"
+		url = "{}/healthcheck".format(self.base_url)
 		self._get(url)
 
 	def _post(self, url, payload=None):

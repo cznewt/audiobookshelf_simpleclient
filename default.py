@@ -201,8 +201,8 @@ class GUI(xbmcgui.WindowXML):
 
 	def getRealIndex(self, current_index):
 		num_audiobooks = len(self.audiobooks)
-		xbmc.log(f"num_audiobooks: {str(num_audiobooks)}", xbmc.LOGINFO)
-		xbmc.log(f"self.page: {str(self.page)}", xbmc.LOGINFO)
+		xbmc.log("num_audiobooks: {}".format(str(num_audiobooks)), xbmc.LOGINFO)
+		xbmc.log("self.page: {}".format(str(self.page)), xbmc.LOGINFO)
 		current_page = self.page
 		real_index = (current_page) * MAX_PER_PAGE + current_index
 		return real_index		
@@ -219,9 +219,9 @@ class GUI(xbmcgui.WindowXML):
 			else:
 				for index, button in enumerate(self.button_controls):
 					if focus_id == button.getId():
-						xbmc.log(f"index: {index}", xbmc.LOGINFO)
+						xbmc.log("index: {}".format(index), xbmc.LOGINFO)
 						rindex = self.getRealIndex(index)
-						xbmc.log(f"realindex: {rindex}", xbmc.LOGINFO)
+						xbmc.log("realindex: {}".format(rindex), xbmc.LOGINFO)
 						self.show_audiobook_player(rindex)
 						break
 
@@ -268,7 +268,7 @@ def select_library(url, token):
 		for item in items["results"]:
 			cover_path = item['media'].get('coverPath', "") or ""
 			icon_id = os.path.basename(os.path.dirname(cover_path))
-			cover_url = f"{url}/api/items/{icon_id}/cover?token={token}"
+			cover_url = "{}/api/items/{}/cover?token={}".format(url, icon_id, token)
 			title = item['media']['metadata'].get('title', "") or ""
 			description = item['media']['metadata'].get('description', "") or ""
 			narrator_name = item['media']['metadata'].get('narratorName', "") or ""
@@ -294,7 +294,7 @@ def select_library(url, token):
 			display_title = title
 			if progress_info["progress"] > 0.01:  # Show if more than 1% complete
 				progress_percent = int(progress_info["progress"] * 100)
-				display_title = f"{title} ({progress_percent}%)"
+				display_title = "{} ({}%)".format(title, progress_percent)
 
 			audiobook = {
 				"id": iid,
@@ -323,7 +323,7 @@ if __name__ == '__main__':
 		dialog = SettingsDialog()
 		dialog.get_and_store_settings()
 
-	url = f"http://{ip_address}:{port}"
+	url = "http://{}:{}".format(ip_address, port)
 	service = AudioBookShelfService(url)
 
 	try:
