@@ -79,15 +79,19 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 		pb.setPercent(progress_percentage)
 
 	def progressbar_updater(self):
+		monitor = xbmc.Monitor()
 		while self.player.isPlayingAudio():
 			self.update_progressbar()
 			self.auto_save_progress()
-			xbmc.sleep(5000)
+			if monitor.waitForAbort(5.0):  # 5 seconds, interruptible
+				break
 
 	def chapter_updater(self):
+		monitor = xbmc.Monitor()
 		while self.player.isPlayingAudio():
 			self.update_chapter(self.player.getTime())
-			xbmc.sleep(2000)				
+			if monitor.waitForAbort(2.0):  # 2 seconds, interruptible
+				break				
 
 	def get_chapter_by_time(self,time):
 		for chapter in self.chapters:
@@ -121,6 +125,7 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 		return None
 
 	def update_timer(self):
+		monitor = xbmc.Monitor()
 		while self.player.isPlayingAudio():
 			ct = self.player.getTime()
 			
@@ -133,7 +138,8 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 
 			timer_control = self.getControl(1012)
 			timer_control.setLabel(formatted_time)        
-			xbmc.sleep(500)
+			if monitor.waitForAbort(0.5):  # 500ms, interruptible
+				break
 
 	def load_progress(self):
 		"""Load saved progress from the server"""
@@ -180,26 +186,88 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 				self.save_progress(current_time)
 
 	def resume_from_progress(self):
-		"""Resume playback from saved progress"""
+		"""Resume playback from saved progress using waitForAbort instead of sleep"""
 		if self.saved_progress > 0:
 			try:
-				# Wait for player to be ready
-				max_wait_time = 10
-				wait_count = 0
-				while not self.player.isPlayingAudio() and wait_count < max_wait_time:
-					xbmc.sleep(1000)
-					wait_count += 1
+				monitor = xbmc.Monitor()
+				
+				# Wait for player to be ready using waitForAbort
+				max_wait_time = 10  # seconds
+				wait_interval = 0.5  # 500ms intervals
+				attempts = int(max_wait_time / wait_interval)
+				
+				for _ in range(attempts):
+					if self.player.isPlayingAudio():
+						break
+					if monitor.waitForAbort(wait_interval):
+						return  # Interrupted
 				
 				if self.player.isPlayingAudio():
-					xbmc.sleep(1000)  # Additional delay for stability
+					# Additional stability wait using waitForAbort
+					monitor.waitForAbort(0.5)  # 500ms wait, interruptible
+					
 					self.player.seekTime(self.saved_progress)
 					xbmc.log(f"Resumed playback at {self.saved_progress} seconds", xbmc.LOGINFO)
-					# Update chapter display after seeking
-					xbmc.sleep(1000)
+					
+					# Update chapter display after seeking using waitForAbort
+					monitor.waitForAbort(0.5)  # Brief wait for seek to complete
 					if self.player.isPlayingAudio():
 						self.update_chapter(self.player.getTime())
 			except Exception as e:
-				xbmc.log(f"Failed to resume from progress: {str(e)}", xbmc.LOGERROR)	
+				xbmc.log(f"Failed to resume from progress: {str(e)}", xbmc.LOGERROR)
+
+	def delayed_resume_from_progress(self):
+		"""Resume from progress using waitForAbort instead of sleep for better responsiveness"""
+		if self.saved_progress > 0:
+			try:
+				# Create a monitor instance for this operation
+				monitor = xbmc.Monitor()
+				
+				# Try for up to 20 attempts with minimal delays using waitForAbort
+				for attempt in range(20):
+					if self.player.isPlayingAudio():
+						try:
+							self.player.seekTime(self.saved_progress)
+							
+							# Brief wait using waitForAbort (interruptible and non-blocking)
+							if not monitor.waitForAbort(0.1):  # 100ms wait, interruptible
+								if self.player.isPlayingAudio():
+									current_pos = self.player.getTime()
+									if abs(current_pos - self.saved_progress) < 5:
+										xbmc.log(f"Successfully resumed at {current_pos}s (target: {self.saved_progress}s)", xbmc.LOGINFO)
+										# Update chapter info without blocking
+										self._start_thread(self.delayed_chapter_update)
+										return
+						except:
+							pass  # Continue trying
+					
+					# Short wait using waitForAbort instead of sleep
+					if monitor.waitForAbort(0.1):  # 100ms, but can be interrupted
+						break  # User requested abort
+				
+				xbmc.log("Resume attempts completed, falling back to standard method", xbmc.LOGINFO)
+				self.resume_from_progress()
+					
+			except Exception as e:
+				xbmc.log(f"Error in delayed resume: {str(e)}", xbmc.LOGERROR)
+
+	def delayed_chapter_update(self):
+		"""Update chapter info after resume using waitForAbort"""
+		try:
+			monitor = xbmc.Monitor()
+			
+			# Wait for seek to stabilize using waitForAbort
+			for _ in range(10):  # Up to 1 second total
+				if monitor.waitForAbort(0.1):  # 100ms wait, interruptible
+					return  # Interrupted
+					
+				if self.player.isPlayingAudio():
+					current_time = self.player.getTime()
+					if abs(current_time - self.saved_progress) < 5:
+						self.update_chapter(current_time)
+						return
+		except Exception as e:
+			xbmc.log(f"Error updating chapter after resume: {str(e)}", xbmc.LOGERROR)
 
 	def _start_thread(self, target):
 		thread = threading.Thread(target=target)
@@ -220,17 +288,25 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 				if self.player.isPlayingAudio():
 					self.player.pause()
 				else:
+					# Start playback
 					self.player.play(afile)
-					# Resume from saved progress after playback starts
+					
+					# Wait for player to be ready, then seek to saved position if available
 					if self.saved_progress > 0:
-						# Start thread to handle resume after playback initializes
-						self._start_thread(self.resume_from_progress)
+						self._start_thread(self.delayed_resume_from_progress)
 
+				# Wait for pause button to be visible using waitForAbort
+				monitor = xbmc.Monitor()
 				while not self.getControl(1010).isVisible():
-					xbmc.sleep(1000)
+					if monitor.waitForAbort(0.1):  # 100ms intervals, interruptible
+						break
 				self.setFocus(self.getControl(1010))
 
-				self.update_chapter(self.player.getTime())
+				# Wait briefly for potential seeking to complete before updating chapter
+				monitor.waitForAbort(1.0)  # 1 second wait, interruptible
+				if self.player.isPlayingAudio():
+					self.update_chapter(self.player.getTime())
+				
 				self._start_thread(self.progressbar_updater)
 				self._start_thread(self.chapter_updater)
 				self._start_thread(self.update_timer)
@@ -246,8 +322,11 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 				
 				self.player.pause()
 
+				# Wait for play button to be visible using waitForAbort
+				monitor = xbmc.Monitor()
 				while not self.getControl(1001).isVisible():
-					xbmc.sleep(1000)
+					if monitor.waitForAbort(0.1):  # 100ms intervals, interruptible
+						break
 				self.setFocus(self.getControl(1001))
 
 			elif focus_id in [1003, 1008]:  # Chapter navigation buttons

@@ -1,4 +1,11 @@
-# Audiobook Progress Tracking Feature
+# Audiobook Progres### 2. Resume Functionality
+
+- When starting playbook, the client checks for existing progress on the server
+- If progress is found, playbook starts and immediately seeks to the saved position with minimal delay
+- The resume process uses an optimized approach with `waitForAbort()` instead of blocking `sleep()` calls
+- Non-blocking, interruptible waiting that responds immediately to user actions or system events
+- Falls back to a standard resume method if the quick approach fails
+- Chapter information is updated after resuminging Feature
 
 ## Overview
 
@@ -20,8 +27,9 @@ This update adds comprehensive progress tracking and resume functionality to the
 ### 2. Resume Functionality
 
 - When starting playback, the client checks for existing progress on the server
-- If progress is found, playback automatically resumes from the saved position
-- The resume process waits for the player to initialize properly before seeking
+- If progress is found, playback starts and immediately seeks to the saved position with minimal delay
+- The resume process uses an optimized approach that attempts to seek as quickly as possible after player initialization
+- Falls back to a standard resume method if the quick approach fails
 - Chapter information is updated after resuming
 
 ### 3. Visual Progress Indicators
@@ -88,9 +96,9 @@ Progress data format:
 
 ### Resuming a Book
 1. User selects a book they've previously started (shows progress percentage)
-2. Playback starts and automatically seeks to the saved position
-3. A brief pause occurs while the player initializes and seeks
-4. Playbook continues from where it was left off
+2. Playback starts and immediately seeks to the saved position within 1-2 seconds
+3. The user may hear a very brief moment of audio from the beginning before the seek completes
+4. Playback continues from the correct saved position
 5. Chapter information updates to reflect the current position
 
 ### Progress Indicators
@@ -125,8 +133,11 @@ The implementation includes comprehensive error handling:
 
 - Progress is only saved when there are actual changes (not redundant saves)
 - Network calls are made asynchronously to avoid blocking the UI
+- **No blocking `sleep()` calls** - all timing uses Kodi's `waitForAbort()` for interruptible, responsive waiting
+- **Event-driven approach** - responds immediately to player state changes and user actions
 - Minimal impact on playbook performance with 30-second save intervals
 - Server requests are only made for actual progress updates
+- **Responsive UI** - all waiting operations can be interrupted by user actions or system events
 
 ## Future Enhancements
 
