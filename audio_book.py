@@ -4,6 +4,7 @@ import xbmc
 import requests
 import json
 import threading
+import sys
 from library_service import AudioBookShelfLibraryService
 
 class AudioBookPlayer(xbmcgui.WindowXMLDialog):
@@ -21,6 +22,12 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 		self.library_service = AudioBookShelfLibraryService()
 		self.chapters = self.library_service.get_chapters(self.id)
 		self.threads = []
+		
+		# Progress tracking variables
+		self.saved_progress = 0.0
+		self.last_saved_time = 0.0
+		self.progress_save_interval = 30  # Save progress every 30 seconds
+		self.load_progress()
 
 	def onInit(self):
 		controls_mapping = {
@@ -74,6 +81,7 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 	def progressbar_updater(self):
 		while self.player.isPlayingAudio():
 			self.update_progressbar()
+			self.auto_save_progress()
 			xbmc.sleep(5000)
 
 	def chapter_updater(self):
@@ -125,7 +133,73 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 
 			timer_control = self.getControl(1012)
 			timer_control.setLabel(formatted_time)        
-			xbmc.sleep(500)	
+			xbmc.sleep(500)
+
+	def load_progress(self):
+		"""Load saved progress from the server"""
+		try:
+			progress_data = self.library_service.get_media_progress(self.id)
+			if progress_data and 'currentTime' in progress_data:
+				self.saved_progress = float(progress_data['currentTime'])
+				xbmc.log(f"Loaded progress for {self.id}: {self.saved_progress} seconds", xbmc.LOGINFO)
+			else:
+				self.saved_progress = 0.0
+				xbmc.log(f"No saved progress found for {self.id}", xbmc.LOGINFO)
+		except Exception as e:
+			xbmc.log(f"Failed to load progress for {self.id}: {str(e)}", xbmc.LOGERROR)
+			self.saved_progress = 0.0
+
+	def save_progress(self, current_time=None):
+		"""Save current progress to the server"""
+		try:
+			if current_time is None:
+				if self.player.isPlayingAudio():
+					current_time = self.player.getTime()
+				else:
+					current_time = self.last_saved_time
+
+			if current_time > 0:
+				progress_data = {
+					'currentTime': current_time,
+					'duration': self.duration,
+					'progress': (current_time / self.duration) if self.duration > 0 else 0
+				}
+				
+				self.library_service.update_media_progress(self.id, progress_data)
+				self.last_saved_time = current_time
+				xbmc.log(f"Saved progress for {self.id}: {current_time} seconds", xbmc.LOGDEBUG)
+		except Exception as e:
+			xbmc.log(f"Failed to save progress for {self.id}: {str(e)}", xbmc.LOGERROR)
+
+	def auto_save_progress(self):
+		"""Automatically save progress at regular intervals"""
+		if self.player.isPlayingAudio():
+			current_time = self.player.getTime()
+			# Save progress if enough time has passed since last save
+			if abs(current_time - self.last_saved_time) >= self.progress_save_interval:
+				self.save_progress(current_time)
+
+	def resume_from_progress(self):
+		"""Resume playback from saved progress"""
+		if self.saved_progress > 0:
+			try:
+				# Wait for player to be ready
+				max_wait_time = 10
+				wait_count = 0
+				while not self.player.isPlayingAudio() and wait_count < max_wait_time:
+					xbmc.sleep(1000)
+					wait_count += 1
+				
+				if self.player.isPlayingAudio():
+					xbmc.sleep(1000)  # Additional delay for stability
+					self.player.seekTime(self.saved_progress)
+					xbmc.log(f"Resumed playback at {self.saved_progress} seconds", xbmc.LOGINFO)
+					# Update chapter display after seeking
+					xbmc.sleep(1000)
+					if self.player.isPlayingAudio():
+						self.update_chapter(self.player.getTime())
+			except Exception as e:
+				xbmc.log(f"Failed to resume from progress: {str(e)}", xbmc.LOGERROR)	
 
 	def _start_thread(self, target):
 		thread = threading.Thread(target=target)
@@ -147,6 +221,10 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 					self.player.pause()
 				else:
 					self.player.play(afile)
+					# Resume from saved progress after playback starts
+					if self.saved_progress > 0:
+						# Start thread to handle resume after playback initializes
+						self._start_thread(self.resume_from_progress)
 
 				while not self.getControl(1010).isVisible():
 					xbmc.sleep(1000)
@@ -158,6 +236,14 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 				self._start_thread(self.update_timer)
 
 			elif focus_id == 1010:  # Pause Button
+				# Save progress before pausing
+				if self.player.isPlayingAudio():
+					try:
+						current_time = self.player.getTime()
+						self.save_progress(current_time)
+					except:
+						pass  # Continue if getting time fails
+				
 				self.player.pause()
 
 				while not self.getControl(1001).isVisible():
@@ -174,6 +260,8 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 				if chapter:
 					cs = chapter['start']
 					self.player.seekTime(cs)
+					# Save progress after seeking to new chapter
+					self.save_progress(cs)
 
 			elif focus_id in [1002, 1007]:  # Time navigation buttons
 				ct = self.player.getTime()
@@ -184,10 +272,20 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 					st = ct + 10
 
 				if st is not None:
+					# Ensure we don't seek to negative time
+					st = max(0, st)
 					self.player.seekTime(st)
+					# Save progress after seeking
+					self.save_progress(st)
 
 	def close(self):
+		# Save progress before closing
 		if self.player.isPlayingAudio():
+			try:
+				current_time = self.player.getTime()
+				self.save_progress(current_time)
+			except:
+				pass  # Continue closing if saving fails
 			self.player.stop()
 
 		for thread in self.threads:

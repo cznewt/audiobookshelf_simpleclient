@@ -230,9 +230,12 @@ class GUI(xbmcgui.WindowXML):
 		selected_audiobook = self.audiobooks[index]
 		cover = selected_audiobook['cover_url']
 		iid = selected_audiobook['id']
+		# Use original title (without progress indicator) for the player
+		title_for_player = selected_audiobook.get('original_title', selected_audiobook['title'])
+		
 		audiobook_data = {
 			'id': iid,
-			'title': selected_audiobook['title'],
+			'title': title_for_player,
 			'cover': cover,
 			'description': selected_audiobook['description'],
 			'narrator_name': selected_audiobook['narrator_name'],
@@ -275,15 +278,35 @@ def select_library(url, token):
 			duration = item['media'].get('duration', 0.0) or 0.0
 			iid = item['id']
 
+			# Get progress information
+			progress_info = {"currentTime": 0.0, "progress": 0.0}
+			try:
+				progress_data = library_service.get_media_progress(iid)
+				if progress_data and 'currentTime' in progress_data:
+					progress_info = {
+						"currentTime": float(progress_data.get('currentTime', 0.0)),
+						"progress": float(progress_data.get('progress', 0.0))
+					}
+			except:
+				pass  # If progress fetch fails, use defaults
+
+			# Add progress indicator to title if book has been started
+			display_title = title
+			if progress_info["progress"] > 0.01:  # Show if more than 1% complete
+				progress_percent = int(progress_info["progress"] * 100)
+				display_title = f"{title} ({progress_percent}%)"
+
 			audiobook = {
 				"id": iid,
-				"title": title,
+				"title": display_title,
+				"original_title": title,  # Keep original for player
 				"cover_url": cover_url,
 				"description": description,
 				"narrator_name": "Narrator: "+narrator_name,
 				"published_year": "Year: "+published_year,
 				"publisher": "Publisher: "+publisher,
 				"duration": duration,
+				"progress": progress_info
 			}
 			audiobooks.append(audiobook)
 
