@@ -1,10 +1,32 @@
 # Audiobook Progres### 2. Resume Functionality
+### Technical Implementation
 
-- When starting playbook, the client checks for existing progress on the server
-- If progress is found, playbook starts and immediately seeks to the saved position with minimal delay
-- The resume process uses an optimized approach with `waitForAbort()` instead of blocking `sleep()` calls
+#### Modified Files
+
+#### `audio_book.py`
+- Added progress tracking variables (`saved_progress`, `last_saved_time`, `progress_save_interval`)
+- **Seamless Resume System** with multiple fallback layers:
+  1. **ListItem Resume** - Uses Kodi's native `resumetime` property for instant positioning
+  2. **Pause-Seek-Resume** - Pauses immediately after start, seeks, then resumes
+  3. **Standard Seeking** - Traditional seek after playback initialization
+- New methods:
+  - `load_progress()` - Loads saved progress from server on initialization
+  - `save_progress(current_time)` - Saves progress to server
+  - `auto_save_progress()` - Automatic interval-based saving during playback
+  - `_start_silent_playback_with_resume()` - Handles seamless resume with fallbacks
+  - `_verify_listitem_resume()` - Verifies native resume worked correctly
+  - `_handle_pause_seek_resume()` - Alternative resume method
+- **Sleep-free implementation**: All timing uses `waitForAbort()` for responsive, interruptible waits
+- Enhanced existing methods to integrate progress saving:
+  - Play button now uses seamless resume system
+  - Pause button saves progress before pausing
+  - Chapter/time navigation saves progress after seeking
+  - Close method saves final progress before exit playback, the client checks for existing progress on the server
+- If progress is found, playback starts directly at the saved position using Kodi's ListItem resume properties
+- **Seamless resume**: No audio from the beginning is heard - playback starts exactly where you left off
+- **Multiple fallback methods**: If ListItem resume fails, falls back to pause-seek-resume, then to standard seeking
+- The resume process uses optimized `waitForAbort()` instead of blocking `sleep()` calls
 - Non-blocking, interruptible waiting that responds immediately to user actions or system events
-- Falls back to a standard resume method if the quick approach fails
 - Chapter information is updated after resuminging Feature
 
 ## Overview
@@ -96,10 +118,10 @@ Progress data format:
 
 ### Resuming a Book
 1. User selects a book they've previously started (shows progress percentage)
-2. Playback starts and immediately seeks to the saved position within 1-2 seconds
-3. The user may hear a very brief moment of audio from the beginning before the seek completes
-4. Playback continues from the correct saved position
-5. Chapter information updates to reflect the current position
+2. Playback starts directly at the saved position with no audio from the beginning
+3. **Seamless experience**: Uses Kodi's native resume capabilities for instant positioning
+4. **Fallback protection**: If native resume fails, uses alternative methods to ensure resume works
+5. Chapter information updates to reflect the current position immediately
 
 ### Progress Indicators
 - **New books**: Show normal title (e.g., "The Great Gatsby")

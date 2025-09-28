@@ -269,6 +269,117 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 		except Exception as e:
 			xbmc.log(f"Error updating chapter after resume: {str(e)}", xbmc.LOGERROR)
 
+	def _start_silent_playback_with_resume(self, afile):
+		"""Start playback using ListItem with resume point to avoid hearing the beginning"""
+		try:
+			# Create a ListItem with resume information
+			listitem = xbmcgui.ListItem(path=afile)
+			
+			# Set resume point properties
+			listitem.setProperty('resumetime', str(self.saved_progress))
+			listitem.setProperty('totaltime', str(self.duration))
+			
+			# Try to use the ListItem with resume properties
+			try:
+				# Use xbmc.Player().play() with ListItem that has resume info
+				self.player.play(afile, listitem)
+				xbmc.log(f"Started playback with resume point at {self.saved_progress}s using ListItem", xbmc.LOGINFO)
+				
+				# Verify the resume worked after a brief moment
+				self._start_thread(self._verify_listitem_resume)
+				
+			except Exception as e:
+				xbmc.log(f"ListItem resume failed: {str(e)}, falling back to pause method", xbmc.LOGINFO)
+				# Fallback to pause-seek-resume method
+				self.player.play(afile)
+				self._start_thread(self._handle_pause_seek_resume)
+				
+		except Exception as e:
+			xbmc.log(f"Error in ListItem playback: {str(e)}", xbmc.LOGERROR)
+			# Final fallback to normal playback
+			self.player.play(afile)
+			if self.saved_progress > 0:
+				self._start_thread(self.delayed_resume_from_progress)
+
+	def _verify_listitem_resume(self):
+		"""Verify that ListItem resume worked correctly"""
+		try:
+			monitor = xbmc.Monitor()
+			
+			# Wait for playback to start
+			for _ in range(30):  # 3 seconds max
+				if self.player.isPlayingAudio():
+					break
+				if monitor.waitForAbort(0.1):
+					return
+			
+			if self.player.isPlayingAudio():
+				# Check if we're at the expected position
+				monitor.waitForAbort(0.5)  # Give it a moment to stabilize
+				
+				current_pos = self.player.getTime()
+				position_difference = abs(current_pos - self.saved_progress)
+				
+				if position_difference < 10:  # Within 10 seconds is good
+					xbmc.log(f"ListItem resume successful: at {current_pos}s (target: {self.saved_progress}s)", xbmc.LOGINFO)
+					# Update chapter info
+					self._start_thread(self.delayed_chapter_update)
+				else:
+					xbmc.log(f"ListItem resume inaccurate: at {current_pos}s (target: {self.saved_progress}s), correcting...", xbmc.LOGINFO)
+					# Correct the position
+					self.player.seekTime(self.saved_progress)
+					self._start_thread(self.delayed_chapter_update)
+			else:
+				xbmc.log("ListItem playback verification failed - player not active", xbmc.LOGWARNING)
+				
+		except Exception as e:
+			xbmc.log(f"Error verifying ListItem resume: {str(e)}", xbmc.LOGERROR)
+
+	def _handle_pause_seek_resume(self):
+		"""Pause immediately after start, seek, then resume"""
+		try:
+			monitor = xbmc.Monitor()
+			
+			# Wait for player to start, then pause immediately
+			for _ in range(20):  # 2 seconds max
+				if self.player.isPlayingAudio():
+					# Pause as soon as playback starts
+					self.player.pause()
+					xbmc.log("Paused playback immediately after start", xbmc.LOGDEBUG)
+					break
+				if monitor.waitForAbort(0.1):
+					return
+			
+			# Brief wait to ensure pause took effect
+			monitor.waitForAbort(0.1)
+			
+			# Seek to saved position while paused
+			try:
+				self.player.seekTime(self.saved_progress)
+				xbmc.log(f"Sought to {self.saved_progress} seconds while paused", xbmc.LOGINFO)
+			except Exception as e:
+				xbmc.log(f"Error seeking while paused: {str(e)}", xbmc.LOGERROR)
+			
+			# Brief wait for seek to complete
+			monitor.waitForAbort(0.2)
+			
+			# Resume playback from the correct position
+			if not self.player.isPlayingAudio():  # Should be paused
+				self.player.pause()  # This will resume since it's currently paused
+				xbmc.log("Resumed playback from correct position", xbmc.LOGINFO)
+			
+			# Verify position after resume
+			monitor.waitForAbort(0.3)
+			if self.player.isPlayingAudio():
+				current_pos = self.player.getTime()
+				xbmc.log(f"Playing at {current_pos}s (target: {self.saved_progress}s)", xbmc.LOGINFO)
+				
+				# Update chapter info
+				self._start_thread(self.delayed_chapter_update)
+				
+		except Exception as e:
+			xbmc.log(f"Error in pause-seek-resume: {str(e)}", xbmc.LOGERROR)
+
 	def _start_thread(self, target):
 		thread = threading.Thread(target=target)
 		thread.start()
@@ -283,17 +394,19 @@ class AudioBookPlayer(xbmcgui.WindowXMLDialog):
 			focus_id = self.getFocusId()
 			if focus_id == 1001:  # Play Button
 				play_button = self.getControl(1001)
-				afile = self.library_service.get_file_url(self.id)
-
+				
 				if self.player.isPlayingAudio():
 					self.player.pause()
 				else:
-					# Start playback
-					self.player.play(afile)
+					# Get file URL and handle progress before starting playback
+					afile = self.library_service.get_file_url(self.id)
 					
-					# Wait for player to be ready, then seek to saved position if available
+					# If we have saved progress, start playback with special handling
 					if self.saved_progress > 0:
-						self._start_thread(self.delayed_resume_from_progress)
+						self._start_silent_playback_with_resume(afile)
+					else:
+						# No progress, start normal playback
+						self.player.play(afile)
 
 				# Wait for pause button to be visible using waitForAbort
 				monitor = xbmc.Monitor()
