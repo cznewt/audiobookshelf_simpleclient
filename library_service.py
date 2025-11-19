@@ -18,16 +18,16 @@ class AudioBookShelfLibraryService:
 			self.token = token
 			self.base_url = base_url
 			self.headers = self.HEADERS_TEMPLATE.copy()
-			self.headers["Authorization"] = f"Bearer {token}"
+			self.headers["Authorization"] = "Bearer {}".format(token)
 			self.initialized = True
 
 	def get_all_libraries(self):
-		url = f"{self.base_url}/api/libraries"
+		url = "{}/api/libraries".format(self.base_url)
 		response = requests.get(url, headers=self.headers)
 		return response.json()
 
 	def get_library(self, library_id, include_filterdata=False):
-		url = f"{self.base_url}/api/libraries/{library_id}"
+		url = "{}/api/libraries/{}".format(self.base_url, library_id)
 		params = {}
 		if include_filterdata:
 			params["include"] = "filterdata"
@@ -36,7 +36,7 @@ class AudioBookShelfLibraryService:
 		return response.json()
 
 	def get_library_items(self, library_id, limit=None, page=None, sort=None, desc=None, filter=None, minified=None, collapseseries=None, include=None):
-		url = f"{self.base_url}/api/libraries/{library_id}/items"
+		url = "{}/api/libraries/{}/items".format(self.base_url, library_id)
 		params = {}
 		
 		if limit is not None:
@@ -60,7 +60,7 @@ class AudioBookShelfLibraryService:
 		return response.json()
 
 	def get_library_item_by_id(self, item_id, expanded=None, include=None, episode=None):
-		url = f"{self.base_url}/api/items/{item_id}"
+		url = "{}/api/items/{}".format(self.base_url, item_id)
 		params = {}
 		
 		if expanded is not None:
@@ -75,9 +75,9 @@ class AudioBookShelfLibraryService:
 
 	def play_library_item_by_id(self, item_id, episode_id=None, device_info=None, force_direct_play=False, force_transcode=False, supported_mime_types=None, media_player="unknown"):
 		if episode_id:
-			url = f"{self.base_url}/api/items/{item_id}/play/{episode_id}"
+			url = "{}/api/items/{}/play/{}".format(self.base_url, item_id, episode_id)
 		else:
-			url = f"{self.base_url}/api/items/{item_id}/play"
+			url = "{}/api/items/{}/play".format(self.base_url, item_id)
 
 		payload = {
 			"forceDirectPlay": force_direct_play,
@@ -94,7 +94,7 @@ class AudioBookShelfLibraryService:
 		response = requests.post(url, headers=self.headers, json=payload)
 
 		if response.status_code != 200:
-			raise Exception(f"Error fetching item by ID. Status code: {response.status_code}")
+			raise Exception("Error fetching item by ID. Status code: {}".format(response.status_code))
 
 		return response.json()
 
@@ -104,16 +104,16 @@ class AudioBookShelfLibraryService:
 		full_content_url = None
 		if "audioTracks" in response and len(response["audioTracks"]) > 0:
 			relative_content_url = response["audioTracks"][0]["contentUrl"]
-			full_content_url = f"{self.base_url}{relative_content_url}?token={self.token}"
+			full_content_url = "{}{}?token={}".format(self.base_url, relative_content_url, self.token)
 
 		if not full_content_url:
 			raise Exception("Content URL not found or empty.")
 		return full_content_url  
 
 	def get_media_progress(self, library_item_id, episode_id=None):
-		endpoint = f"/api/me/progress/{library_item_id}"
+		endpoint = "/api/me/progress/{}".format(library_item_id)
 		if episode_id:
-			endpoint += f"/{episode_id}"
+			endpoint += "/{}".format(episode_id)
 
 		response = requests.get(self.base_url + endpoint, headers=self.headers)
 		response.raise_for_status()
@@ -126,9 +126,9 @@ class AudioBookShelfLibraryService:
 			return {'message': 'Failed to decode JSON'}
 
 	def update_media_progress(self, library_item_id, data, episode_id=None):
-		endpoint = f"/api/me/progress/{library_item_id}"
+		endpoint = "/api/me/progress/{}".format(library_item_id)
 		if episode_id:
-			endpoint += f"/{episode_id}"
+			endpoint += "/{}".format(episode_id)
 
 		response = requests.patch(self.base_url + endpoint, headers=self.headers, json=data)
 		response.raise_for_status()
